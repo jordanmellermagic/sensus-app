@@ -1,79 +1,85 @@
-import { useEffect, useRef, useState } from "react";
-import { getUser } from "../api/client.js";
+import { useEffect, useState, useRef } from "react";
+import { getUser, postUser, createUserIfNotExists } from "../utils/api";
 
-// helper: merge new data into old, keeping old non-empty values
-function mergeUserData(prev, next) {
-  if (!next) return prev;
-  if (!prev) return next;
+export function useUserData(userId, pollingInterval = 2000) {
+  const [userData, setUserData] = useState(null);
+  const pollingRef = useRef(null);
 
-  const merged = { ...prev };
+  // 🔥 NEW MERGE LOGIC
+  function mergeUserData(prev, next) {
+    if (!next) return prev;
+    if (!prev) return next;
 
-  for (const key of Object.keys(next)) {
-    const newVal = next[key];
-    const oldVal = prev[key];
-
-    // For strings: if new is non-empty, use it; if empty, keep old
-    if (typeof newVal === "string") {
-      merged[key] = newVal.trim() !== "" ? newVal : oldVal;
-    } else if (newVal !== null && newVal !== undefined) {
-      // Non-string fields: always use new when defined
-      merged[key] = newVal;
-    } else {
-      // newVal null/undefined: keep old
-      merged[key] = oldVal;
+    // If clearSpectator flag is present, wipe only spectator fields
+    if (next._clearSpectator) {
+      return {
+        ...prev,
+        first_name: "",
+        last_name: "",
+        phone_number: "",
+        birthday: "",
+        days_alive: 0,
+        address: "",
+        // preserve these
+        note_name: prev.note_name,
+        screenshot_base64: prev.screenshot_base64,
+        command: prev.command,
+      };
     }
+
+    // Normal merge for live updates
+    const merged = { ...prev };
+
+    for (const key of Object.keys(next)) {
+      const newVal = next[key];
+      const oldVal = prev[key];
+
+      if (typeof newVal === "string") {
+        merged[key] = newVal.trim() !== "" ? newVal : oldVal;
+      } else if (newVal !== undefined && newVal !== null) {
+        merged[key] = newVal;
+      } else {
+        merged[key] = oldVal;
+      }
+    }
+
+    return merged;
   }
 
-  return merged;
-}
-
-export function useUserData(userId, intervalMs = 1000) {
-  const [data, setData] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [isOffline, setIsOffline] = useState(false);
-  const intervalRef = useRef(null);
-
+  // Load once when userId changes
   useEffect(() => {
+    if (!userId) return;
+
     let cancelled = false;
 
-    async function fetchOnce() {
-      if (!userId) {
-        setData(null);
-        setError(null);
-        return;
-      }
-      setIsLoading(true);
-      try {
-        const result = await getUser(userId);
-        if (!cancelled) {
-          setData((prev) => mergeUserData(prev, result));
-          setError(null);
-          setIsOffline(!navigator.onLine ? true : false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err);
-          setIsOffline(!navigator.onLine);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+    async function load() {
+      const data = await createUserIfNotExists(userId);
+      if (!cancelled) {
+        setUserData((prev) => mergeUserData(prev, data));
       }
     }
 
-    fetchOnce();
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (userId) {
-      intervalRef.current = setInterval(fetchOnce, intervalMs);
-    }
-
+    load();
     return () => {
       cancelled = true;
-      if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [userId, intervalMs]);
+  }, [userId]);
 
-  return { data, isLoading, error, isOffline };
+  // Polling for updates
+  useEffect(() => {
+    if (!userId) return;
+
+    pollingRef.current = setInterval(async () => {
+      try {
+        const data = await getUser(userId);
+        setUserData((prev) => mergeUserData(prev, data));
+      } catch (e) {
+        console.warn("Polling failed", e);
+      }
+    }, pollingInterval);
+
+    return () => clearInterval(pollingRef.current);
+  }, [userId, pollingInterval]);
+
+  return { userData, setUserData, refresh: () => createUserIfNotExists(userId) };
 }
