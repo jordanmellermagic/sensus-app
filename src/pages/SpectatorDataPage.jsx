@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUserDataContext } from "../context/UserDataContext.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import AddressBox from "../components/AddressBox.jsx";
+import { postUser } from "../api/client.js";
 
 function computeDaysAliveFromBirthday(birthdayStr) {
   if (!birthdayStr) return null;
@@ -17,6 +18,7 @@ function computeDaysAliveFromBirthday(birthdayStr) {
 export default function SpectatorDataPage() {
   const navigate = useNavigate();
   const { userId, userData, error, isOffline } = useUserDataContext();
+  const [cleared, setCleared] = useState(false);
 
   const addresses = useMemo(() => {
     if (!userData?.address) return [];
@@ -30,6 +32,38 @@ export default function SpectatorDataPage() {
     () => computeDaysAliveFromBirthday(userData?.birthday),
     [userData]
   );
+
+  // ------------------------------------------------------
+  // CLEAR ONLY SPECTATOR-FACING FIELDS
+  // ------------------------------------------------------
+  const clearSpectatorData = async () => {
+    if (!userId || !userData) return;
+
+    const updated = {
+      ...userData,
+
+      // 🔥 ONLY THESE ARE CLEARED:
+      first_name: "",
+      last_name: "",
+      phone_number: "",
+      birthday: "",
+      days_alive: 0,
+      address: "",
+
+      // 🔒 DO NOT CLEAR:
+      // note_name
+      // screenshot_base64
+      // command
+    };
+
+    try {
+      await postUser(userId, updated);
+      setCleared(true);
+      setTimeout(() => setCleared(false), 2000);
+    } catch (err) {
+      console.error("Failed to clear spectator data:", err);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
@@ -47,10 +81,26 @@ export default function SpectatorDataPage() {
         </div>
       </div>
 
+      {cleared && (
+        <div className="absolute top-2 inset-x-0 flex justify-center z-20">
+          <div className="rounded-full bg-neutral-900 border border-neutral-700 px-4 py-1 text-xs text-neutral-200 shadow">
+            Data cleared
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 px-6 pb-10 pt-6 flex flex-col gap-6 max-w-xl w-full mx-auto">
-        <h2 className="text-xl font-semibold tracking-wide mb-2">
-          Spectator Data
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold tracking-wide">Spectator Data</h2>
+
+          {/* Clear Button */}
+          <button
+            onClick={clearSpectatorData}
+            className="text-xs bg-neutral-900 border border-neutral-700 px-3 py-1 rounded-lg active:scale-95 transition"
+          >
+            Clear
+          </button>
+        </div>
 
         <section className="space-y-4">
           <Field label="First Name" value={userData?.first_name} />
@@ -68,16 +118,12 @@ export default function SpectatorDataPage() {
             Address{addresses.length > 1 ? "es" : ""}
           </h3>
           {addresses.length === 0 && (
-            <div className="text-sm text-neutral-500">
-              No address on file.
-            </div>
+            <div className="text-sm text-neutral-500">No address on file.</div>
           )}
           <div className="space-y-3">
             {addresses.map((addr, idx) => (
               <div key={idx} className="flex gap-3 items-start">
-                <div className="text-xs text-neutral-500 pt-1">
-                  {idx + 1}.
-                </div>
+                <div className="text-xs text-neutral-500 pt-1">{idx + 1}.</div>
                 <div className="flex-1">
                   <AddressBox address={addr} />
                 </div>
