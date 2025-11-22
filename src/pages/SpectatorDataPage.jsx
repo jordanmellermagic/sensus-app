@@ -1,159 +1,148 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { useUser } from "../context/UserDataContext";
-import { postUser } from "../api/client";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useUserDataContext } from "../context/UserDataContext.jsx";
+import StatusBanner from "../components/StatusBanner.jsx";
+import AddressBox from "../components/AddressBox.jsx";
+import { postUser } from "../api/client.js";
+
+function computeDaysAliveFromBirthday(birthdayStr) {
+  if (!birthdayStr) return null;
+  const birth = new Date(birthdayStr);
+  if (isNaN(birth.getTime())) return null;
+  const now = new Date();
+  const diffMs = now.getTime() - birth.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  return diffDays;
+}
 
 export default function SpectatorDataPage() {
-  const { userId, userData } = useUser();
+  const navigate = useNavigate();
+  const { userId, userData, error, isOffline } = useUserDataContext();
   const [cleared, setCleared] = useState(false);
 
-  if (!userId) {
-    return (
-      <div className="text-white p-6">
-        <p>No user selected.</p>
-        <Link to="/" className="underline">
-          Go back
-        </Link>
-      </div>
-    );
-  }
+  const addresses = useMemo(() => {
+    if (!userData?.address) return [];
+    return userData.address
+      .split(/\n|;+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }, [userData]);
 
-  if (!userData) {
-    return (
-      <div className="text-white p-6">
-        <p>Loading...</p>
-      </div>
-    );
-  }
-
-  // -------------------------------------------------------
-  // 🔥 CLEAR SPECTATOR DATA (only these fields)
-  // -------------------------------------------------------
+  const daysAlive =
+    userData?.days_alive != null
+      ? userData.days_alive
+      : computeDaysAliveFromBirthday(userData?.birthday);
 
   const clearSpectatorData = async () => {
-    try {
-      await postUser(userId, {
-        _clearSpectator: true, // merge logic uses this flag
-        first_name: "",
-        last_name: "",
-        phone_number: "",
-        birthday: "",
-        days_alive: 0,
-        address: "",
-        // keep these untouched
-        note_name: userData.note_name,
-        screenshot_base64: userData.screenshot_base64,
-        command: userData.command
-      });
+    if (!userId || !userData) return;
 
+    const updated = {
+      // keep non-spectator stuff as-is
+      note_name: userData.note_name || "",
+      screenshot_base64: userData.screenshot_base64 || "",
+      command: userData.command || "",
+
+      // clear spectator fields
+      first_name: "",
+      last_name: "",
+      phone_number: "",
+      birthday: "",
+      days_alive: 0,
+      address: "",
+    };
+
+    try {
+      await postUser(userId, updated);
       setCleared(true);
-      setTimeout(() => setCleared(false), 1500);
+      setTimeout(() => setCleared(false), 2000);
     } catch (err) {
       console.error("Failed to clear spectator data:", err);
     }
   };
 
-  // -------------------------------------------------------
-  // 🧱 Address formatting
-  // -------------------------------------------------------
-
-  const addressList = Array.isArray(userData.address)
-    ? userData.address
-    : typeof userData.address === "string" && userData.address.trim() !== ""
-    ? userData.address.split("\n")
-    : [];
-
   return (
-    <div className="min-h-screen bg-black text-white px-6 py-8">
-      {/* Top bar */}
-      <div className="flex justify-between items-center mb-10">
-        <Link to="/" className="text-sm text-gray-300 hover:text-white">
-          ← Home
-        </Link>
+    <div className="min-h-screen flex flex-col bg-black text-white">
+      <StatusBanner error={error} isOffline={isOffline} />
 
-        {cleared && (
-          <div className="text-xs text-gray-400 bg-gray-800 px-3 py-1 rounded-full">
+      <div className="flex items-center justify-between px-4 pt-4">
+        <button
+          className="text-sm text-neutral-400"
+          onClick={() => navigate("/")}
+        >
+          ← Home
+        </button>
+        <div className="text-xs text-neutral-500">
+          {userId ? `ID: ${userId}` : "No user selected"}
+        </div>
+      </div>
+
+      {cleared && (
+        <div className="absolute top-2 inset-x-0 flex justify-center z-20">
+          <div className="rounded-full bg-neutral-900 border border-neutral-700 px-4 py-1 text-xs text-neutral-200 shadow">
             Data cleared
           </div>
-        )}
+        </div>
+      )}
 
-        <button
-          onClick={clearSpectatorData}
-          className="text-sm bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-xl"
-        >
-          Clear
-        </button>
+      <main className="flex-1 px-6 pb-10 pt-6 flex flex-col gap-6 max-w-xl w-full mx-auto">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold tracking-wide">
+            Spectator Data
+          </h2>
+          <button
+            onClick={clearSpectatorData}
+            className="text-xs bg-neutral-900 border border-neutral-700 px-3 py-1 rounded-lg active:scale-95 transition"
+          >
+            Clear
+          </button>
+        </div>
+
+        <section className="space-y-4 mt-2">
+          <Field label="First Name" value={userData?.first_name} />
+          <Field label="Last Name" value={userData?.last_name} />
+          <Field label="Phone Number" value={userData?.phone_number} />
+          <Field label="Birthday" value={userData?.birthday} />
+          <Field
+            label="Days Alive"
+            value={
+              daysAlive != null && !isNaN(daysAlive)
+                ? daysAlive.toLocaleString()
+                : "—"
+            }
+          />
+        </section>
+
+        <section className="space-y-2 mt-4">
+          <h3 className="text-sm uppercase tracking-wide text-neutral-400">
+            Address{addresses.length > 1 ? "es" : ""}
+          </h3>
+          {addresses.length === 0 && (
+            <div className="text-sm text-neutral-500">No address on file.</div>
+          )}
+          <div className="space-y-3">
+            {addresses.map((addr, idx) => (
+              <div key={idx} className="flex gap-3 items-start">
+                <div className="text-xs text-neutral-500 pt-1">{idx + 1}.</div>
+                <div className="flex-1">
+                  <AddressBox address={addr} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function Field({ label, value }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="text-xs uppercase tracking-wide text-neutral-500">
+        {label}
       </div>
-
-      <h1 className="text-2xl font-semibold mb-6">Spectator Data</h1>
-
-      {/* FIRST NAME */}
-      <div className="mb-4">
-        <label className="text-xs text-gray-400">FIRST NAME</label>
-        <input
-          readOnly
-          value={userData.first_name || ""}
-          className="w-full bg-[#1a1a1a] text-white px-4 py-3 rounded-xl mt-1"
-        />
-      </div>
-
-      {/* LAST NAME */}
-      <div className="mb-4">
-        <label className="text-xs text-gray-400">LAST NAME</label>
-        <input
-          readOnly
-          value={userData.last_name || ""}
-          className="w-full bg-[#1a1a1a] text-white px-4 py-3 rounded-xl mt-1"
-        />
-      </div>
-
-      {/* PHONE NUMBER */}
-      <div className="mb-4">
-        <label className="text-xs text-gray-400">PHONE NUMBER</label>
-        <input
-          readOnly
-          value={userData.phone_number || ""}
-          className="w-full bg-[#1a1a1a] text-white px-4 py-3 rounded-xl mt-1"
-        />
-      </div>
-
-      {/* BIRTHDAY */}
-      <div className="mb-4">
-        <label className="text-xs text-gray-400">BIRTHDAY</label>
-        <input
-          readOnly
-          value={userData.birthday || ""}
-          className="w-full bg-[#1a1a1a] text-white px-4 py-3 rounded-xl mt-1"
-        />
-      </div>
-
-      {/* DAYS ALIVE */}
-      <div className="mb-4">
-        <label className="text-xs text-gray-400">DAYS ALIVE</label>
-        <input
-          readOnly
-          value={userData.days_alive || 0}
-          className="w-full bg-[#1a1a1a] text-white px-4 py-3 rounded-xl mt-1"
-        />
-      </div>
-
-      {/* ADDRESSES */}
-      <div className="mt-6">
-        <label className="text-xs text-gray-400">ADDRESSES</label>
-
-        {addressList.length === 0 ? (
-          <p className="text-gray-500 mt-2 text-sm">No address found</p>
-        ) : (
-          addressList.map((line, i) => (
-            <div
-              key={i}
-              className="bg-[#1a1a1a] px-4 py-3 rounded-xl mt-2 text-gray-200"
-            >
-              <span className="text-xs text-gray-500 mr-2">{i + 1}.</span>
-              {line}
-            </div>
-          ))
-        )}
+      <div className="rounded-xl bg-neutral-900 border border-neutral-800 px-4 py-2 text-sm text-neutral-100">
+        {value || "—"}
       </div>
     </div>
   );
