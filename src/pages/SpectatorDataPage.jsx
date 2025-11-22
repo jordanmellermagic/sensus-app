@@ -68,11 +68,20 @@ export default function SpectatorDataPage() {
             Address{addresses.length > 1 ? "es" : ""}
           </h3>
           {addresses.length === 0 && (
-            <div className="text-sm text-neutral-500">No address on file.</div>
+            <div className="text-sm text-neutral-500">
+              No address on file.
+            </div>
           )}
           <div className="space-y-3">
             {addresses.map((addr, idx) => (
-              <AddressBox key={idx} address={addr} />
+              <div key={idx} className="flex gap-3 items-start">
+                <div className="text-xs text-neutral-500 pt-1">
+                  {idx + 1}.
+                </div>
+                <div className="flex-1">
+                  <AddressBox address={addr} />
+                </div>
+              </div>
             ))}
           </div>
         </section>
