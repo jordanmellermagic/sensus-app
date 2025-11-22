@@ -1,3 +1,5 @@
+// src/context/UserDataContext.jsx
+
 import React, {
   createContext,
   useContext,
@@ -18,24 +20,24 @@ export function UserDataProvider({ children }) {
   const { data, isLoading, error, isOffline } = useUserData(userId, 1000);
   const lastNoteNameRef = useRef(null);
 
-  // Load saved ID on startup
+  // Load saved ID from localStorage when app starts
   useEffect(() => {
     const stored = window.localStorage.getItem("sensus_user_id");
     if (stored) setUserId(stored);
   }, []);
 
-  // Whenever the userId changes → persist it and create the user in API
+  // When userId changes: persist, show confirmation, and create user in API
   useEffect(() => {
     if (!userId) return;
 
-    // Save locally
+    // Save ID
     window.localStorage.setItem("sensus_user_id", userId);
 
-    // Show confirmation bubble
+    // Show "User ID set to ..." pill
     setUserIdJustChanged(userId);
     const timeout = setTimeout(() => setUserIdJustChanged(null), 2000);
 
-    // 🔥 CREATE USER IN API AUTOMATICALLY
+    // Ensure a blank user exists in the API
     (async () => {
       try {
         await postUser(userId, {
@@ -47,7 +49,7 @@ export function UserDataProvider({ children }) {
           address: "",
           note_name: "",
           screenshot_base64: "",
-          command: ""
+          command: "",
         });
       } catch (err) {
         console.error("Failed to create user record:", err);
@@ -57,7 +59,7 @@ export function UserDataProvider({ children }) {
     return () => clearTimeout(timeout);
   }, [userId]);
 
-  // Detect note_name changes and notify
+  // Watch note_name and notify when it changes
   useEffect(() => {
     if (!data) return;
 
@@ -87,7 +89,6 @@ export function UserDataProvider({ children }) {
   );
 }
 
-// Notification helper
 function maybeNotifyNoteName(noteName, setHasRequestedNotification) {
   if (!("Notification" in window)) return;
 
@@ -111,7 +112,8 @@ function maybeNotifyNoteName(noteName, setHasRequestedNotification) {
 
 export function useUserDataContext() {
   const ctx = useContext(UserDataContext);
-  if (!ctx)
+  if (!ctx) {
     throw new Error("useUserDataContext must be used inside UserDataProvider");
+  }
   return ctx;
 }
