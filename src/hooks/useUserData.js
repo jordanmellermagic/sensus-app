@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { getUser, postUser, createUserIfNotExists } from "../utils/api";
+import { getUser, postUser, createUserIfNotExists } from "../api/client";
 
 export function useUserData(userId, pollingInterval = 2000) {
   const [userData, setUserData] = useState(null);
