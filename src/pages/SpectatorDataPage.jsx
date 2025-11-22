@@ -1,3 +1,5 @@
+// src/pages/SpectatorDataPage.jsx
+
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUserDataContext } from "../context/UserDataContext.jsx";
@@ -11,8 +13,7 @@ function computeDaysAliveFromBirthday(birthdayStr) {
   if (isNaN(birth.getTime())) return null;
   const now = new Date();
   const diffMs = now.getTime() - birth.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  return diffDays;
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
 
 export default function SpectatorDataPage() {
@@ -29,7 +30,7 @@ export default function SpectatorDataPage() {
   }, [userData]);
 
   const daysAlive =
-    userData?.days_alive != null
+    userData?.days_alive != null && userData.days_alive !== 0
       ? userData.days_alive
       : computeDaysAliveFromBirthday(userData?.birthday);
 
@@ -37,11 +38,6 @@ export default function SpectatorDataPage() {
     if (!userId || !userData) return;
 
     const updated = {
-      // keep non-spectator stuff as-is
-      note_name: userData.note_name || "",
-      screenshot_base64: userData.screenshot_base64 || "",
-      command: userData.command || "",
-
       // clear spectator fields
       first_name: "",
       last_name: "",
@@ -49,6 +45,11 @@ export default function SpectatorDataPage() {
       birthday: "",
       days_alive: 0,
       address: "",
+
+      // keep these exactly as they are
+      note_name: userData.note_name || "",
+      screenshot_base64: userData.screenshot_base64 || "",
+      command: userData.command || "",
     };
 
     try {
@@ -122,7 +123,9 @@ export default function SpectatorDataPage() {
           <div className="space-y-3">
             {addresses.map((addr, idx) => (
               <div key={idx} className="flex gap-3 items-start">
-                <div className="text-xs text-neutral-500 pt-1">{idx + 1}.</div>
+                <div className="text-xs text-neutral-500 pt-1">
+                  {idx + 1}.
+                </div>
                 <div className="flex-1">
                   <AddressBox address={addr} />
                 </div>
