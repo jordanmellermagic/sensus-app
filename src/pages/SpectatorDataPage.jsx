@@ -19,20 +19,22 @@ export default function SpectatorDataPage() {
   const [showExtras, setShowExtras] = useState(false)
 
   const fetchData = async () => {
-    setLoading(true)
     try {
       const res = await api.get(`/data_peek/${encodeURIComponent(userId)}`)
       setData(res.data || {})
+      setLoading(false)
     } catch (err) {
       console.error('Failed to load data_peek', err)
       setData({})
-    } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
+    setLoading(true)
     fetchData()
+    const id = setInterval(fetchData, 1500)
+    return () => clearInterval(id)
   }, [userId])
 
   const handleClear = async () => {
@@ -61,7 +63,8 @@ export default function SpectatorDataPage() {
   const addressText = data?.address || 'No address on file.'
   const extras = computeExtras(data?.birthday)
   const hasExtras =
-    !!extras.starSign || (extras.hasYear && (extras.daysAlive || extras.weekday))
+    !!extras.starSign ||
+    (extras.hasYear && (extras.daysAlive != null || extras.weekday))
 
   return (
     <div className="w-full max-w-md mx-auto pt-6">
