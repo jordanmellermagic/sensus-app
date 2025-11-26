@@ -1,1 +1,0 @@
-export default function SpectatorDataPage(){return <div>Spectator</div>}
