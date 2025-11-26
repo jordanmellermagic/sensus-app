@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../authContext.jsx'
 import api from '../api.js'
 
-function PillButton({ children, onClick, variant = 'default' }) {
+function PillButton({ children, onClick, variant = 'default', className = '' }) {
   const base =
-    'px-6 py-3 rounded-full text-sm font-medium transition border'
+    'px-6 py-3 rounded-full text-sm font-medium transition border text-center'
   const variants = {
     default:
       base +
@@ -15,7 +15,7 @@ function PillButton({ children, onClick, variant = 'default' }) {
       ' bg-red-700 border-red-500 text-white hover:bg-red-600',
   }
   return (
-    <button onClick={onClick} className={variants[variant]}>
+    <button onClick={onClick} className={variants[variant] + ' ' + className}>
       {children}
     </button>
   )
@@ -40,8 +40,8 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="w-full max-w-md mx-auto pt-6">
-      <div className="text-center mb-4">
+    <div className="w-full max-w-md mx-auto min-h-[calc(100vh-2rem)] flex flex-col justify-start pt-10">
+      <div className="text-center mb-6">
         <h1 className="text-3xl font-semibold tracking-[0.3em] uppercase mb-1">
           SENSUS
         </h1>
@@ -50,13 +50,21 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <div className="text-center text-xs uppercase tracking-wide text-neutral-500 mb-3">
           Peeks
         </div>
-        <div className="flex justify-center gap-4 mb-8">
-          <PillButton onClick={() => navigate('/peek')}>Peek Screen</PillButton>
-          <PillButton onClick={() => navigate('/spectator-data')}>
+        <div className="flex justify-center gap-4 mb-10">
+          <PillButton
+            onClick={() => navigate('/peek')}
+            className="min-w-[140px]"
+          >
+            Peek Screen
+          </PillButton>
+          <PillButton
+            onClick={() => navigate('/spectator-data')}
+            className="min-w-[140px]"
+          >
             Spectator Data
           </PillButton>
         </div>
@@ -64,14 +72,23 @@ export default function DashboardPage() {
         <div className="text-center text-xs uppercase tracking-wide text-neutral-500 mb-3">
           App Controls
         </div>
-        <div className="flex justify-center gap-4 mb-6">
-          <PillButton onClick={() => navigate('/settings')}>Settings</PillButton>
-          <PillButton variant="danger" onClick={handleResetApp}>
+        <div className="flex justify-center gap-4 mb-8">
+          <PillButton
+            onClick={() => navigate('/settings')}
+            className="min-w-[140px]"
+          >
+            Settings
+          </PillButton>
+          <PillButton
+            variant="danger"
+            onClick={handleResetApp}
+            className="min-w-[140px]"
+          >
             Reset App
           </PillButton>
         </div>
 
-        <div className="flex justify-center mt-4">
+        <div className="flex justify-center mt-2">
           <button
             onClick={logout}
             className="px-4 py-1.5 rounded-full border border-neutral-700 text-xs text-neutral-300 hover:bg-neutral-800"
