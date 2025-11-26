@@ -3,17 +3,26 @@ import React, { createContext, useContext, useState } from 'react'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [userId, setUserId] = useState(localStorage.getItem('sensus_user_id') || '')
+  const [userId, setUserId] = useState(
+    typeof window !== 'undefined'
+      ? window.localStorage.getItem('sensus_user_id') || ''
+      : '',
+  )
+
   const isAuthenticated = !!userId
 
   const login = (id) => {
     setUserId(id)
-    localStorage.setItem('sensus_user_id', id)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('sensus_user_id', id)
+    }
   }
 
   const logout = () => {
     setUserId('')
-    localStorage.removeItem('sensus_user_id')
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('sensus_user_id')
+    }
   }
 
   return (
@@ -24,5 +33,7 @@ export function AuthProvider({ children }) {
 }
 
 export function useAuth() {
-  return useContext(AuthContext)
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
+  return ctx
 }
