@@ -9,14 +9,13 @@ const API_BASE = import.meta.env.VITE_API_BASE;
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { userId, setUserId, error, isOffline, userIdJustChanged } =
-    useUserDataContext();
+  const { userId, setUserId, error, isOffline } = useUserDataContext();
 
   // Login state
   const [localId, setLocalId] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-  const [loginLoading, setLoginLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // Admin
   const [isAdmin, setIsAdmin] = useState(false);
@@ -25,16 +24,10 @@ export default function HomePage() {
   const [adminPassword, setAdminPassword] = useState("");
   const [adminStatus, setAdminStatus] = useState("");
   const [adminError, setAdminError] = useState("");
-  const [adminLoading, setAdminLoading] = useState(false);
 
-  // When userId restored from localStorage, we treat as logged in
-  useEffect(() => {
-    if (userId) {
-      setLocalId(userId);
-    }
-  }, [userId]);
+  const loggedIn = Boolean(userId);
 
-  const doLogin = async () => {
+  const handleLogin = async () => {
     setLoginError("");
     setAdminStatus("");
 
@@ -43,26 +36,23 @@ export default function HomePage() {
       return;
     }
 
-    const id = localId.trim();
-    const pwd = password.trim();
-
-    if (!id || !pwd) {
-      setLoginError("Enter both User ID and password.");
+    if (!localId.trim() || !password.trim()) {
+      setLoginError("Enter both fields.");
       return;
     }
 
-    setLoginLoading(true);
+    setLoading(true);
 
     try {
       const res = await fetch(
-        `${API_BASE}/user/${encodeURIComponent(id)}/change_password`,
+        `${API_BASE}/user/${encodeURIComponent(localId)}/change_password`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            old_password: pwd,
-            new_password: pwd,
-          }),
+            old_password: password,
+            new_password: password
+          })
         }
       );
 
@@ -73,30 +63,27 @@ export default function HomePage() {
         return;
       }
 
-      // success
-      setUserId(id);
+      setUserId(localId);
 
-      // If this user IS the admin account → reveal admin panel
-      setIsAdmin(id.toLowerCase() === "admin");
+      // Admin user?
+      setIsAdmin(localId.toLowerCase() === "admin");
 
     } catch (err) {
-      setLoginError("Unable to read server.");
-      console.error(err);
+      setLoginError("Unable to reach server.");
+      console.log(err);
     } finally {
-      setLoginLoading(false);
+      setLoading(false);
     }
   };
 
-  const doAdminCreate = async () => {
+  const handleAdminCreate = async () => {
     setAdminError("");
     setAdminStatus("");
 
-    if (!adminKey.trim() || !adminUserId.trim() || !adminPassword.trim()) {
-      setAdminError("Fill out all fields.");
+    if (!adminKey || !adminUserId || !adminPassword) {
+      setAdminError("Fill all fields.");
       return;
     }
-
-    setAdminLoading(true);
 
     try {
       const res = await fetch(
@@ -105,163 +92,145 @@ export default function HomePage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            user_id: adminUserId.trim(),
-            password: adminPassword.trim(),
-          }),
+            user_id: adminUserId,
+            password: adminPassword
+          })
         }
       );
 
       const json = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setAdminError(json.detail || "Admin request failed.");
+        setAdminError(json.detail || "Admin action failed.");
         return;
       }
 
       if (json.status === "created") {
-        setAdminStatus(`Created user "${json.user_id}"`);
-      } else if (json.status === "updated") {
-        setAdminStatus(`Updated password for "${json.user_id}"`);
+        setAdminStatus(`User "${json.user_id}" created.`);
       } else {
-        setAdminStatus("Success.");
+        setAdminStatus(`Password updated for "${json.user_id}".`);
       }
+
     } catch (err) {
       setAdminError("Unable to reach server.");
-    } finally {
-      setAdminLoading(false);
     }
   };
 
-  const loggedIn = Boolean(userId);
-
-  const canNavigate = loggedIn;
-
   return (
-    <div className="min-h-screen flex flex-col bg-black text-white relative">
+    <div className="min-h-screen flex flex-col bg-black text-white">
       <StatusBanner error={error} isOffline={isOffline} />
 
-      {/* ID saved pill */}
-      {userIdJustChanged && (
-        <div className="absolute top-2 inset-x-0 flex justify-center z-20">
-          <div className="rounded-full bg-neutral-900 border border-neutral-700 px-4 py-1 text-xs text-neutral-200 shadow">
-            Logged in as <span className="font-semibold">{userIdJustChanged}</span>
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 flex flex-col items-center justify-start pt-16 px-6 gap-10">
+      <div className="flex-1 flex flex-col items-center pt-20 px-6">
 
         {/* Header */}
-        <header className="text-center">
-          <h1 className="text-4xl font-semibold tracking-[0.25em] uppercase">
-            Sensus
-          </h1>
-          <p className="mt-2 text-xs text-neutral-500 uppercase tracking-wide">
-            Login
-          </p>
-        </header>
+        <h1 className="text-4xl font-semibold tracking-[0.25em] uppercase mb-12">
+          Sensus
+        </h1>
 
         {/* LOGIN CARD — hidden when logged in */}
         {!loggedIn && (
-          <div className="w-full max-w-sm rounded-2xl bg-neutral-900/60 border border-neutral-800 px-4 py-5 space-y-3">
-            <h2 className="text-sm font-semibold uppercase text-neutral-300">
-              Performer Login
-            </h2>
+          <div className="w-full max-w-sm bg-neutral-900 border border-neutral-700 rounded-2xl p-6 space-y-4">
+            <h2 className="text-sm font-semibold uppercase">Performer Login</h2>
 
-            <label className="text-xs uppercase text-neutral-400">User ID</label>
-            <input
-              value={localId}
-              onChange={(e) => setLocalId(e.target.value)}
-              className="w-full rounded-xl bg-neutral-900 border border-neutral-700 px-4 py-3 outline-none focus:border-blue-500"
-            />
+            <div>
+              <label className="text-xs uppercase text-neutral-400">User ID</label>
+              <input
+                value={localId}
+                onChange={(e) => setLocalId(e.target.value)}
+                className="w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-xl px-4 py-2"
+              />
+            </div>
 
-            <label className="text-xs uppercase text-neutral-400">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl bg-neutral-900 border border-neutral-700 px-4 py-3 outline-none focus:border-blue-500"
-            />
+            <div>
+              <label className="text-xs uppercase text-neutral-400">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-xl px-4 py-2"
+              />
+            </div>
 
-            {loginError && <div className="text-xs text-red-400">{loginError}</div>}
+            {loginError && (
+              <div className="text-xs text-red-400">{loginError}</div>
+            )}
 
             <button
-              onClick={doLogin}
-              disabled={loginLoading}
-              className="mt-2 w-full rounded-xl bg-neutral-100 text-black py-2.5 text-sm font-medium disabled:opacity-50"
+              onClick={handleLogin}
+              disabled={loading}
+              className="w-full bg-white text-black rounded-xl py-2.5 font-medium mt-2 disabled:opacity-50"
             >
-              {loginLoading ? "Checking…" : "Log In"}
+              {loading ? "Checking…" : "Log In"}
             </button>
           </div>
         )}
 
-        {/* LOGGED IN DISPLAY */}
+        {/* LOGGED IN STATUS */}
         {loggedIn && (
-          <div className="text-center text-neutral-400 text-sm mb-[-20px]">
-            Logged in as <span className="font-semibold">{userId}</span>
+          <p className="text-neutral-400 text-sm mb-6">
+            Logged in as <span className="text-white font-semibold">{userId}</span>
+          </p>
+        )}
+
+        {/* Buttons */}
+        {loggedIn && (
+          <div className="w-full max-w-sm flex flex-row gap-4 mb-10">
+            <button
+              onClick={() => navigate("/peek")}
+              className="flex-1 bg-neutral-900 border border-neutral-700 py-3 rounded-xl"
+            >
+              Phone Peek
+            </button>
+
+            <button
+              onClick={() => navigate("/spectator")}
+              className="flex-1 bg-neutral-900 border border-neutral-700 py-3 rounded-xl"
+            >
+              Spectator Data
+            </button>
           </div>
         )}
 
-        {/* Navigation buttons */}
-        <div className="w-full max-w-sm flex flex-row gap-4 mt-6">
-          <button
-            disabled={!canNavigate}
-            onClick={() => navigate("/peek")}
-            className="flex-1 rounded-2xl py-4 text-sm font-semibold border border-neutral-700 bg-neutral-900 disabled:opacity-40"
-          >
-            Phone Peek
-          </button>
-
-          <button
-            disabled={!canNavigate}
-            onClick={() => navigate("/spectator")}
-            className="flex-1 rounded-2xl py-4 text-sm font-semibold border border-neutral-700 bg-neutral-900 disabled:opacity-40"
-          >
-            Spectator Data
-          </button>
-        </div>
-
-        {/* ADMIN PANEL — only visible for admin user */}
+        {/* ADMIN PANEL — ONLY FOR ADMIN LOGIN */}
         {loggedIn && isAdmin && (
-          <div className="w-full max-w-sm rounded-2xl bg-neutral-950/80 border border-neutral-800 px-4 py-4 space-y-2 mt-6">
-            <h3 className="text-xs uppercase tracking-wide text-neutral-400">
+          <div className="w-full max-w-sm bg-neutral-900 border border-neutral-700 rounded-2xl p-6 space-y-3 mt-4">
+            <h3 className="text-xs uppercase text-neutral-400 mb-2">
               Admin: Create / Update User
             </h3>
 
-            <label className="text-[11px] text-neutral-500 uppercase">Admin Key</label>
             <input
               type="password"
+              placeholder="Admin key"
               value={adminKey}
               onChange={(e) => setAdminKey(e.target.value)}
-              className="w-full rounded-xl bg-neutral-900 border border-neutral-700 px-3 py-2"
+              className="w-full bg-neutral-800 border border-neutral-600 rounded-xl px-4 py-2"
             />
 
-            <label className="text-[11px] text-neutral-500 uppercase">User ID</label>
             <input
+              placeholder="User ID"
               value={adminUserId}
               onChange={(e) => setAdminUserId(e.target.value)}
-              className="w-full rounded-xl bg-neutral-900 border border-neutral-700 px-3 py-2"
+              className="w-full bg-neutral-800 border border-neutral-600 rounded-xl px-4 py-2"
             />
 
-            <label className="text-[11px] text-neutral-500 uppercase">Password</label>
             <input
               type="password"
+              placeholder="Password"
               value={adminPassword}
               onChange={(e) => setAdminPassword(e.target.value)}
-              className="w-full rounded-xl bg-neutral-900 border border-neutral-700 px-3 py-2"
+              className="w-full bg-neutral-800 border border-neutral-600 rounded-xl px-4 py-2"
             />
 
-            {adminError && <div className="text-[11px] text-red-400">{adminError}</div>}
+            {adminError && <div className="text-xs text-red-400">{adminError}</div>}
             {adminStatus && (
-              <div className="text-[11px] text-emerald-400">{adminStatus}</div>
+              <div className="text-xs text-emerald-400">{adminStatus}</div>
             )}
 
             <button
-              onClick={doAdminCreate}
-              disabled={adminLoading}
-              className="mt-1 w-full rounded-xl bg-neutral-100 text-black py-2 text-xs font-semibold disabled:opacity-50"
+              onClick={handleAdminCreate}
+              className="w-full bg-white text-black rounded-xl py-2.5 font-medium"
             >
-              {adminLoading ? "Saving…" : "Create / Update User"}
+              Create / Update User
             </button>
           </div>
         )}
