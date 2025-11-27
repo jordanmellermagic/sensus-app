@@ -1,40 +1,16 @@
+// src/pages/PeekScreenPage.jsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../authContext.jsx';
 import { API_BASE } from '../apiConfig.js';
 
-function safeParseDate(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-}
-
-function determineHero(noteData, screenData) {
-  const noteUpdated = safeParseDate(
-    (noteData && (noteData.note_peek_updated_at || noteData.updated_at)) || null
-  );
-  const screenUpdated = safeParseDate(
-    (screenData && (screenData.screen_peek_updated_at || screenData.updated_at)) || null
-  );
-
-  if (!noteUpdated && !screenUpdated) {
-    return null;
-  }
-
-  if (screenUpdated && (!noteUpdated || screenUpdated >= noteUpdated)) {
-    const hasScreenshot = Boolean(screenData && screenData.has_screenshot);
-    const hasUrl =
-      Boolean(screenData && (screenData.url_search_text || screenData.url || screenData.domain));
-    const hasContacts = Boolean(screenData && screenData.contacts && screenData.contacts.length);
-
-    if (hasScreenshot) return 'screenshot';
-    if (hasUrl) return 'url';
-    if (hasContacts) return 'contacts';
-    return 'screenshot';
-  }
-
-  return 'note';
+// Hero priority WITHOUT timestamps (GET endpoints don't expose *_updated_at)
+function determineHero({ hasScreenshot, hasNote, hasContact, hasUrl }) {
+  if (hasScreenshot) return 'screenshot';
+  if (hasNote) return 'note';
+  if (hasContact) return 'contacts';
+  if (hasUrl) return 'url';
+  return null;
 }
 
 export default function PeekScreenPage() {
@@ -70,8 +46,8 @@ export default function PeekScreenPage() {
   };
 
   const handleSetCommand = (command) => {
-    // Frontend-only implementation; integrates with existing environment if needed.
-    // In installed PWA, device vibration is triggered separately below.
+    // If you later wire this to /commands, you can POST here.
+    // For now we only log, as per your original spec.
     // eslint-disable-next-line no-console
     console.log('setCommand', command);
   };
@@ -82,6 +58,7 @@ export default function PeekScreenPage() {
     }
   };
 
+  // Poll backend every 1.5 seconds, wired to your actual endpoints.:contentReference[oaicite:3]{index=3}
   React.useEffect(() => {
     let active = true;
     let intervalId;
@@ -89,10 +66,9 @@ export default function PeekScreenPage() {
     const fetchAll = async () => {
       if (!userId) return;
       try {
-        const [noteRes, screenRes, screenshotRes] = await Promise.allSettled([
+        const [noteRes, screenRes] = await Promise.allSettled([
           fetch(`${API_BASE}/note_peek/${encodeURIComponent(userId)}`),
-          fetch(`${API_BASE}/screen_peek/${encodeURIComponent(userId)}`),
-          fetch(`${API_BASE}/screen_peek/${encodeURIComponent(userId)}/screenshot`)
+          fetch(`${API_BASE}/screen_peek/${encodeURIComponent(userId)}`)
         ]);
 
         if (!active) return;
@@ -107,19 +83,46 @@ export default function PeekScreenPage() {
           if (active) setScreenData(json);
         }
 
-        if (screenshotRes.status === 'fulfilled' && screenshotRes.value.ok) {
-          const blob = await screenshotRes.value.blob();
-          const url = URL.createObjectURL(blob);
-          if (active) {
-            setScreenshotUrl((prev) => {
-              if (prev) {
-                URL.revokeObjectURL(prev);
+        // Screenshot: only try to fetch if backend says a screenshot_path exists
+        const screenshotPath =
+          screenData && screenData.screenshot_path
+            ? screenData.screenshot_path
+            : null;
+
+        if (screenshotPath) {
+          try {
+            const shotRes = await fetch(
+              `${API_BASE}/screen_peek/${encodeURIComponent(userId)}/screenshot`
+            );
+            if (shotRes.ok) {
+              const blob = await shotRes.blob();
+              const url = URL.createObjectURL(blob);
+              if (active) {
+                setScreenshotUrl((prev) => {
+                  if (prev) URL.revokeObjectURL(prev);
+                  return url;
+                });
+              } else {
+                URL.revokeObjectURL(url);
               }
-              return url;
-            });
-          } else {
-            URL.revokeObjectURL(url);
+            } else {
+              // if 404, just clear
+              if (active) {
+                setScreenshotUrl((prev) => {
+                  if (prev) URL.revokeObjectURL(prev);
+                  return null;
+                });
+              }
+            }
+          } catch {
+            // ignore errors; will try again on next poll
           }
+        } else {
+          // no screenshot_path -> clear screenshot
+          setScreenshotUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return null;
+          });
         }
       } catch {
         // ignore, next poll will try again
@@ -139,7 +142,7 @@ export default function PeekScreenPage() {
         return null;
       });
     };
-  }, [userId]);
+  }, [userId, screenData && screenData.screenshot_path]);
 
   const handleTouchStart = (e) => {
     const touches = e.touches;
@@ -166,7 +169,7 @@ export default function PeekScreenPage() {
       if (pointerDownRef.current) {
         setIsReveal(true);
       }
-    }, 150); // 120–180ms range, using 150ms
+    }, 150); // 120–180ms → pick 150ms
   };
 
   const handleTouchMove = (e) => {
@@ -176,7 +179,7 @@ export default function PeekScreenPage() {
         (touches[0].clientY + (touches[1]?.clientY || touches[0].clientY)) / 2;
       const deltaY = currentY - twoFingerRef.current.startY;
       if (deltaY > 50) {
-        // Two-finger swipe down → navigate to dashboard
+        // Two-finger swipe down → dashboard
         twoFingerRef.current.active = false;
         ignoreTapRef.current = true;
         clearLongPressTimeout();
@@ -204,12 +207,11 @@ export default function PeekScreenPage() {
       handleSetCommand('finishEffect');
       triggerVibration();
       resetTapState();
-      // No navigation on triple tap (per updated behavior)
+      // No navigation on triple tap
     }
   };
 
   const handleTouchEnd = (e) => {
-    const touchesRemaining = e.touches;
     clearLongPressTimeout();
 
     if (twoFingerRef.current.active) {
@@ -221,7 +223,7 @@ export default function PeekScreenPage() {
     }
 
     if (pointerDownRef.current && !isReveal && !ignoreTapRef.current) {
-      // Tap (short press) -> tap-based commands
+      // Short tap → tap commands
       registerTap();
     }
 
@@ -238,35 +240,28 @@ export default function PeekScreenPage() {
     setIsReveal(false);
   };
 
-  const hero = determineHero(
-    noteData,
-    screenData && {
-      ...screenData,
-      has_screenshot: Boolean(screenshotUrl)
-    }
-  );
+  // Map backend fields to our UI
+  const noteName = noteData && noteData.note_name;
+  const noteBody = noteData && noteData.note_body;
+  const hasNote = Boolean(noteBody && noteBody.trim());
 
-  const hasNote = Boolean(noteData && noteData.text);
-  const noteText = noteData && (noteData.text || noteData.note);
+  const contactRaw = screenData && screenData.contact;
+  const hasContact = Boolean(contactRaw && String(contactRaw).trim());
 
-  const contacts =
-    (screenData && screenData.contacts) ||
-    (screenData && screenData.contact_list) ||
-    null;
+  const urlRaw = screenData && screenData.url;
+  const hasUrl = Boolean(urlRaw && String(urlRaw).trim());
 
-  const urlSearchText =
-    (screenData && screenData.url_search_text) ||
-    (screenData && screenData.url_search_term) ||
-    null;
-
-  const urlDomain =
-    (screenData && screenData.domain) ||
-    (screenData && screenData.url_domain) ||
-    null;
-
-  const hasContacts = Boolean(contacts && contacts.length);
-  const hasUrl = Boolean(urlSearchText || urlDomain);
   const hasScreenshot = Boolean(screenshotUrl);
+
+  const hero = determineHero({
+    hasScreenshot,
+    hasNote,
+    hasContact,
+    hasUrl
+  });
+
+  // Normalize contact to an array (spec says "Contacts", API is single "contact")
+  const contactsArray = hasContact ? [String(contactRaw)] : [];
 
   return (
     <div
@@ -276,23 +271,27 @@ export default function PeekScreenPage() {
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
     >
+      {/* Idle state: pure black; nothing rendered */}
       {isReveal && (
         <div className="peek-overlay">
+          {/* HERO: NOTE */}
           {hero === 'note' && hasNote && (
             <>
               <div className="peek-block hero">
-                <div className="peek-note-text peek-hero-large">{noteText}</div>
+                <div className="peek-note-text peek-hero-large">
+                  {noteBody}
+                </div>
               </div>
               {hasScreenshot && (
                 <div className="peek-block bottom-center">
                   <img src={screenshotUrl} alt="Screen peek" className="peek-screenshot" />
                 </div>
               )}
-              {hasContacts && (
+              {hasContact && (
                 <div className="peek-block top-right">
-                  <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Contacts</div>
+                  <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Contact</div>
                   <ul className="peek-contacts-list">
-                    {contacts.map((c, idx) => (
+                    {contactsArray.map((c, idx) => (
                       <li key={idx}>{c}</li>
                     ))}
                   </ul>
@@ -300,27 +299,18 @@ export default function PeekScreenPage() {
               )}
               {hasUrl && (
                 <div className="peek-block top-middle">
-                  {urlSearchText && (
-                    <div>
-                      <span role="img" aria-label="search">
-                        \uD83D\uDD0D
-                      </span>{' '}
-                      {urlSearchText}
-                    </div>
-                  )}
-                  {urlDomain && (
-                    <div>
-                      <span role="img" aria-label="web">
-                        \uD83C\uDF10
-                      </span>{' '}
-                      {urlDomain}
-                    </div>
-                  )}
+                  <div>
+                    <span role="img" aria-label="web">
+                      {'\uD83C\uDF10'}
+                    </span>{' '}
+                    {urlRaw}
+                  </div>
                 </div>
               )}
             </>
           )}
 
+          {/* HERO: SCREENSHOT */}
           {hero === 'screenshot' && hasScreenshot && (
             <>
               <div className="peek-block hero">
@@ -328,14 +318,16 @@ export default function PeekScreenPage() {
               </div>
               {hasNote && (
                 <div className="peek-block top-left">
-                  <div className="peek-note-text">{noteText}</div>
+                  <div className="peek-note-text">
+                    {noteBody}
+                  </div>
                 </div>
               )}
-              {hasContacts && (
+              {hasContact && (
                 <div className="peek-block top-right">
-                  <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Contacts</div>
+                  <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Contact</div>
                   <ul className="peek-contacts-list">
-                    {contacts.map((c, idx) => (
+                    {contactsArray.map((c, idx) => (
                       <li key={idx}>{c}</li>
                     ))}
                   </ul>
@@ -343,46 +335,27 @@ export default function PeekScreenPage() {
               )}
               {hasUrl && (
                 <div className="peek-block top-middle">
-                  {urlSearchText && (
-                    <div>
-                      <span role="img" aria-label="search">
-                        \uD83D\uDD0D
-                      </span>{' '}
-                      {urlSearchText}
-                    </div>
-                  )}
-                  {urlDomain && (
-                    <div>
-                      <span role="img" aria-label="web">
-                        \uD83C\uDF10
-                      </span>{' '}
-                      {urlDomain}
-                    </div>
-                  )}
+                  <div>
+                    <span role="img" aria-label="web">
+                      {'\uD83C\uDF10'}
+                    </span>{' '}
+                    {urlRaw}
+                  </div>
                 </div>
               )}
             </>
           )}
 
+          {/* HERO: URL */}
           {hero === 'url' && hasUrl && (
             <>
               <div className="peek-block hero">
-                {urlSearchText && (
-                  <div className="peek-hero-large">
-                    <span role="img" aria-label="search">
-                      \uD83D\uDD0D
-                    </span>{' '}
-                    {urlSearchText}
-                  </div>
-                )}
-                {urlDomain && (
-                  <div style={{ marginTop: 6 }}>
-                    <span role="img" aria-label="web">
-                      \uD83C\uDF10
-                    </span>{' '}
-                    {urlDomain}
-                  </div>
-                )}
+                <div className="peek-hero-large">
+                  <span role="img" aria-label="web">
+                    {'\uD83C\uDF10'}
+                  </span>{' '}
+                  {urlRaw}
+                </div>
               </div>
               {hasScreenshot && (
                 <div className="peek-block bottom-center">
@@ -391,14 +364,16 @@ export default function PeekScreenPage() {
               )}
               {hasNote && (
                 <div className="peek-block top-left">
-                  <div className="peek-note-text">{noteText}</div>
+                  <div className="peek-note-text">
+                    {noteBody}
+                  </div>
                 </div>
               )}
-              {hasContacts && (
+              {hasContact && (
                 <div className="peek-block top-right">
-                  <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Contacts</div>
+                  <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Contact</div>
                   <ul className="peek-contacts-list">
-                    {contacts.map((c, idx) => (
+                    {contactsArray.map((c, idx) => (
                       <li key={idx}>{c}</li>
                     ))}
                   </ul>
@@ -407,41 +382,34 @@ export default function PeekScreenPage() {
             </>
           )}
 
-          {hero === 'contacts' && hasContacts && (
+          {/* HERO: CONTACTS */}
+          {hero === 'contacts' && hasContact && (
             <>
               <div className="peek-block hero">
                 <div className="peek-hero-large" style={{ marginBottom: 6 }}>
-                  Contacts
+                  Contact
                 </div>
                 <ul className="peek-contacts-list">
-                  {contacts.map((c, idx) => (
+                  {contactsArray.map((c, idx) => (
                     <li key={idx}>{c}</li>
                   ))}
                 </ul>
               </div>
               {hasNote && (
                 <div className="peek-block top-left">
-                  <div className="peek-note-text">{noteText}</div>
+                  <div className="peek-note-text">
+                    {noteBody}
+                  </div>
                 </div>
               )}
               {hasUrl && (
                 <div className="peek-block top-middle">
-                  {urlSearchText && (
-                    <div>
-                      <span role="img" aria-label="search">
-                        \uD83D\uDD0D
-                      </span>{' '}
-                      {urlSearchText}
-                    </div>
-                  )}
-                  {urlDomain && (
-                    <div>
-                      <span role="img" aria-label="web">
-                        \uD83C\uDF10
-                      </span>{' '}
-                      {urlDomain}
-                    </div>
-                  )}
+                  <div>
+                    <span role="img" aria-label="web">
+                      {'\uD83C\uDF10'}
+                    </span>{' '}
+                    {urlRaw}
+                  </div>
                 </div>
               )}
               {hasScreenshot && (
