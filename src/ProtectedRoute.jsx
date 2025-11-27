@@ -3,19 +3,14 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "./authContext.jsx";
 
 export default function ProtectedRoute({ children }) {
-  const { userId, loading } = useAuth();
+  const auth = useAuth();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-black text-white">
-        Loading…
-      </div>
-    );
-  }
+  // If context is not ready → avoid destructuring crash
+  if (!auth || auth.loading) return null;
 
-  if (!userId) {
-    return <Navigate to="/" replace />;
-  }
+  const { userId } = auth;
+
+  if (!userId) return <Navigate to="/" replace />;
 
   return children;
 }
