@@ -26,15 +26,19 @@ body {
 }
 
 /* ===========================
-   UNIVERSAL UTILITY CLASSES
+   LOGIN ONLY CENTERING
 =========================== */
 
-.center-column {
+.login-center {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
+
+/* ===========================
+   UNIVERSAL UTILITY CLASSES
+=========================== */
 
 .pill-button {
   background-color: #111;
@@ -237,7 +241,7 @@ body {
 }
 
 /* ===========================
-   PEEK SCREEN (MOST IMPORTANT)
+   PEEK SCREEN
 =========================== */
 
 .peek-root {
@@ -248,7 +252,6 @@ body {
   overflow: hidden;
   touch-action: none;
 
-  /* Disable text selection + iOS callout */
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -270,14 +273,12 @@ body {
   padding: 6px;
 }
 
-/* HERO POSITIONS */
 .hero {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
 }
 
-/* OTHER POSITIONS */
 .top-left {
   top: 10px;
   left: 10px;
@@ -304,7 +305,6 @@ body {
   transform: translateX(-50%);
 }
 
-/* PEEK CONTENT STYLING */
 .peek-hero-large {
   font-size: 1.4rem;
   line-height: 1.3;
