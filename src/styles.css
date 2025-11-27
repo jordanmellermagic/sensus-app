@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-black text-white font-sans;
+}
+
+/* Reusable classes */
+.sensus-logo {
+  @apply tracking-[0.4em] uppercase text-xl font-semibold;
+}
+
+.card {
+  @apply bg-neutral-900 border border-neutral-800 rounded-2xl;
+}
+
+.pill-btn {
+  @apply px-5 py-2.5 rounded-full border border-neutral-700 bg-neutral-900 text-sm;
+}
+
+.pill-btn-primary {
+  @apply bg-white text-black border-white;
+}
+
+.pill-btn-danger {
+  @apply border-red-400 text-red-400;
+}
+
+.link-muted {
+  @apply text-xs text-neutral-400;
+}
