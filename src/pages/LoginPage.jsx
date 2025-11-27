@@ -1,1 +1,0 @@
-import React from 'react';import {useNavigate} from 'react-router-dom';import {useAuth} from '../authContext.jsx';export default function LoginPage(){const n=useNavigate();const{set}=useAuth();function login(){set('x');n('/dashboard');}return(<div className='h-screen bg-black flex items-center justify-center text-white'><button onClick={login}>Login</button></div>)}

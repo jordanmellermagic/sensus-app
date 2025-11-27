@@ -1,1 +1,0 @@
-import React,{createContext,useContext,useState} from 'react';const C=createContext();export const AuthProvider=({children})=>{const[t,set]=useState(null);return<C.Provider value={{t,set}}>{children}</C.Provider>};export const useAuth=()=>useContext(C);
