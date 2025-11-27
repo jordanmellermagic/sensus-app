@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../authContext.jsx';
 import { API_BASE } from '../apiConfig.js';
 
-// Hero priority WITHOUT timestamps (GET endpoints don't expose *_updated_at)
+// Hero priority when timestamps aren't exposed to the frontend
 function determineHero({ hasScreenshot, hasNote, hasContact, hasUrl }) {
   if (hasScreenshot) return 'screenshot';
   if (hasNote) return 'note';
@@ -20,7 +20,6 @@ export default function PeekScreenPage() {
   const [noteData, setNoteData] = React.useState(null);
   const [screenData, setScreenData] = React.useState(null);
   const [screenshotUrl, setScreenshotUrl] = React.useState(null);
-
   const [isReveal, setIsReveal] = React.useState(false);
 
   const longPressTimeoutRef = React.useRef(null);
@@ -28,10 +27,7 @@ export default function PeekScreenPage() {
   const lastTapTimeRef = React.useRef(0);
   const tapCountRef = React.useRef(0);
   const ignoreTapRef = React.useRef(false);
-  const twoFingerRef = React.useRef({
-    active: false,
-    startY: 0
-  });
+  const twoFingerRef = React.useRef({ active: false, startY: 0 });
 
   const clearLongPressTimeout = () => {
     if (longPressTimeoutRef.current) {
@@ -45,11 +41,17 @@ export default function PeekScreenPage() {
     lastTapTimeRef.current = 0;
   };
 
-  const handleSetCommand = (command) => {
-    // If you later wire this to /commands, you can POST here.
-    // For now we only log, as per your original spec.
-    // eslint-disable-next-line no-console
-    console.log('setCommand', command);
+  const sendCommand = async (command) => {
+    if (!userId) return;
+    try {
+      await fetch(`${API_BASE}/commands/${encodeURIComponent(userId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command })
+      });
+    } catch {
+      // ignore network errors for performance safety
+    }
   };
 
   const triggerVibration = () => {
@@ -58,10 +60,29 @@ export default function PeekScreenPage() {
     }
   };
 
-  // Poll backend every 1.5 seconds, wired to your actual endpoints.:contentReference[oaicite:3]{index=3}
+  const registerTap = () => {
+    const now = Date.now();
+    if (now - lastTapTimeRef.current < 350) {
+      tapCountRef.current += 1;
+    } else {
+      tapCountRef.current = 1;
+    }
+    lastTapTimeRef.current = now;
+
+    if (tapCountRef.current === 2) {
+      sendCommand('screenshot');
+      triggerVibration();
+    } else if (tapCountRef.current >= 3) {
+      sendCommand('finishEffect');
+      triggerVibration();
+      resetTapState();
+      // no navigation on triple tap
+    }
+  };
+
+  // Poll note_peek + screen_peek + screenshot every 1.5 seconds
   React.useEffect(() => {
     let active = true;
-    let intervalId;
 
     const fetchAll = async () => {
       if (!userId) return;
@@ -78,17 +99,14 @@ export default function PeekScreenPage() {
           if (active) setNoteData(json);
         }
 
+        let screenJson = null;
         if (screenRes.status === 'fulfilled' && screenRes.value.ok) {
-          const json = await screenRes.value.json();
-          if (active) setScreenData(json);
+          screenJson = await screenRes.value.json();
+          if (active) setScreenData(screenJson);
         }
 
-        // Screenshot: only try to fetch if backend says a screenshot_path exists
-        const screenshotPath =
-          screenData && screenData.screenshot_path
-            ? screenData.screenshot_path
-            : null;
-
+        // Screenshot: only fetch if backend says a screenshot_path exists
+        const screenshotPath = screenJson && screenJson.screenshot_path;
         if (screenshotPath) {
           try {
             const shotRes = await fetch(
@@ -105,51 +123,45 @@ export default function PeekScreenPage() {
               } else {
                 URL.revokeObjectURL(url);
               }
-            } else {
-              // if 404, just clear
-              if (active) {
-                setScreenshotUrl((prev) => {
-                  if (prev) URL.revokeObjectURL(prev);
-                  return null;
-                });
-              }
+            } else if (active) {
+              setScreenshotUrl((prev) => {
+                if (prev) URL.revokeObjectURL(prev);
+                return null;
+              });
             }
           } catch {
-            // ignore errors; will try again on next poll
+            // ignore screenshot errors; keep last good one or none
           }
-        } else {
-          // no screenshot_path -> clear screenshot
+        } else if (active) {
           setScreenshotUrl((prev) => {
             if (prev) URL.revokeObjectURL(prev);
             return null;
           });
         }
       } catch {
-        // ignore, next poll will try again
+        // ignore; next poll will try again
       }
     };
 
     fetchAll();
-    intervalId = window.setInterval(fetchAll, 1500);
+    const id = window.setInterval(fetchAll, 1500);
 
     return () => {
       active = false;
-      if (intervalId) {
-        window.clearInterval(intervalId);
-      }
+      window.clearInterval(id);
       setScreenshotUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
       });
     };
-  }, [userId, screenData && screenData.screenshot_path]);
+  }, [userId]);
 
   const handleTouchStart = (e) => {
     const touches = e.touches;
     if (!touches || touches.length === 0) return;
 
-    // Two-finger swipe setup
     if (touches.length >= 2) {
+      // two-finger gesture
       twoFingerRef.current.active = true;
       twoFingerRef.current.startY =
         (touches[0].clientY + (touches[1]?.clientY || touches[0].clientY)) / 2;
@@ -159,7 +171,7 @@ export default function PeekScreenPage() {
       return;
     }
 
-    // Single finger
+    // one finger
     twoFingerRef.current.active = false;
     ignoreTapRef.current = false;
     pointerDownRef.current = true;
@@ -169,7 +181,7 @@ export default function PeekScreenPage() {
       if (pointerDownRef.current) {
         setIsReveal(true);
       }
-    }, 150); // 120–180ms → pick 150ms
+    }, 150); // 120–180ms; choose 150ms
   };
 
   const handleTouchMove = (e) => {
@@ -179,11 +191,11 @@ export default function PeekScreenPage() {
         (touches[0].clientY + (touches[1]?.clientY || touches[0].clientY)) / 2;
       const deltaY = currentY - twoFingerRef.current.startY;
       if (deltaY > 50) {
-        // Two-finger swipe down → dashboard
+        // two-finger swipe down -> dashboard
         twoFingerRef.current.active = false;
         ignoreTapRef.current = true;
-        clearLongPressTimeout();
         pointerDownRef.current = false;
+        clearLongPressTimeout();
         setIsReveal(false);
         navigate('/dashboard');
       }
@@ -191,27 +203,7 @@ export default function PeekScreenPage() {
     }
   };
 
-  const registerTap = () => {
-    const now = Date.now();
-    if (now - lastTapTimeRef.current < 350) {
-      tapCountRef.current += 1;
-    } else {
-      tapCountRef.current = 1;
-    }
-    lastTapTimeRef.current = now;
-
-    if (tapCountRef.current === 2) {
-      handleSetCommand('screenshot');
-      triggerVibration();
-    } else if (tapCountRef.current >= 3) {
-      handleSetCommand('finishEffect');
-      triggerVibration();
-      resetTapState();
-      // No navigation on triple tap
-    }
-  };
-
-  const handleTouchEnd = (e) => {
+  const handleTouchEnd = () => {
     clearLongPressTimeout();
 
     if (twoFingerRef.current.active) {
@@ -223,7 +215,7 @@ export default function PeekScreenPage() {
     }
 
     if (pointerDownRef.current && !isReveal && !ignoreTapRef.current) {
-      // Short tap → tap commands
+      // short tap
       registerTap();
     }
 
@@ -240,8 +232,7 @@ export default function PeekScreenPage() {
     setIsReveal(false);
   };
 
-  // Map backend fields to our UI
-  const noteName = noteData && noteData.note_name;
+  // Map backend fields to booleans
   const noteBody = noteData && noteData.note_body;
   const hasNote = Boolean(noteBody && noteBody.trim());
 
@@ -260,7 +251,6 @@ export default function PeekScreenPage() {
     hasUrl
   });
 
-  // Normalize contact to an array (spec says "Contacts", API is single "contact")
   const contactsArray = hasContact ? [String(contactRaw)] : [];
 
   return (
@@ -271,7 +261,7 @@ export default function PeekScreenPage() {
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
     >
-      {/* Idle state: pure black; nothing rendered */}
+      {/* Idle state: pure black */}
       {isReveal && (
         <div className="peek-overlay">
           {/* HERO: NOTE */}
@@ -282,11 +272,17 @@ export default function PeekScreenPage() {
                   {noteBody}
                 </div>
               </div>
+
               {hasScreenshot && (
                 <div className="peek-block bottom-center">
-                  <img src={screenshotUrl} alt="Screen peek" className="peek-screenshot" />
+                  <img
+                    src={screenshotUrl}
+                    alt="Screen peek"
+                    className="peek-screenshot"
+                  />
                 </div>
               )}
+
               {hasContact && (
                 <div className="peek-block top-right">
                   <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Contact</div>
@@ -297,6 +293,7 @@ export default function PeekScreenPage() {
                   </ul>
                 </div>
               )}
+
               {hasUrl && (
                 <div className="peek-block top-middle">
                   <div>
@@ -314,8 +311,13 @@ export default function PeekScreenPage() {
           {hero === 'screenshot' && hasScreenshot && (
             <>
               <div className="peek-block hero">
-                <img src={screenshotUrl} alt="Screen peek" className="peek-screenshot" />
+                <img
+                  src={screenshotUrl}
+                  alt="Screen peek"
+                  className="peek-screenshot"
+                />
               </div>
+
               {hasNote && (
                 <div className="peek-block top-left">
                   <div className="peek-note-text">
@@ -323,6 +325,7 @@ export default function PeekScreenPage() {
                   </div>
                 </div>
               )}
+
               {hasContact && (
                 <div className="peek-block top-right">
                   <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Contact</div>
@@ -333,6 +336,7 @@ export default function PeekScreenPage() {
                   </ul>
                 </div>
               )}
+
               {hasUrl && (
                 <div className="peek-block top-middle">
                   <div>
@@ -357,11 +361,17 @@ export default function PeekScreenPage() {
                   {urlRaw}
                 </div>
               </div>
+
               {hasScreenshot && (
                 <div className="peek-block bottom-center">
-                  <img src={screenshotUrl} alt="Screen peek" className="peek-screenshot" />
+                  <img
+                    src={screenshotUrl}
+                    alt="Screen peek"
+                    className="peek-screenshot"
+                  />
                 </div>
               )}
+
               {hasNote && (
                 <div className="peek-block top-left">
                   <div className="peek-note-text">
@@ -369,6 +379,7 @@ export default function PeekScreenPage() {
                   </div>
                 </div>
               )}
+
               {hasContact && (
                 <div className="peek-block top-right">
                   <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Contact</div>
@@ -395,6 +406,7 @@ export default function PeekScreenPage() {
                   ))}
                 </ul>
               </div>
+
               {hasNote && (
                 <div className="peek-block top-left">
                   <div className="peek-note-text">
@@ -402,6 +414,7 @@ export default function PeekScreenPage() {
                   </div>
                 </div>
               )}
+
               {hasUrl && (
                 <div className="peek-block top-middle">
                   <div>
@@ -412,9 +425,14 @@ export default function PeekScreenPage() {
                   </div>
                 </div>
               )}
+
               {hasScreenshot && (
                 <div className="peek-block bottom-center">
-                  <img src={screenshotUrl} alt="Screen peek" className="peek-screenshot" />
+                  <img
+                    src={screenshotUrl}
+                    alt="Screen peek"
+                    className="peek-screenshot"
+                  />
                 </div>
               )}
             </>
