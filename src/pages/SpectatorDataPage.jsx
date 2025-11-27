@@ -1,66 +1,93 @@
-// src/pages/SpectatorDataPage.jsx
 import React from 'react';
 import { useAuth } from '../authContext.jsx';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../apiConfig.js';
 
-// Mirror backend's parse_partial_birthday logic as closely as possible
-// Backend: accepts numeric formats like MM-DD, YYYY-MM-DD, YYYY-MM, DD-MM-YYYY, etc.:contentReference[oaicite:1]{index=1}
+// Parse birthday string as robustly as possible.
+// Primary: ISO "YYYY-MM-DD"
+// Fallbacks: "Mar 6 2008", "March 6 2008", "Mar 6, 2008", "3/6/2008", etc.
 function parseBirthday(raw) {
   if (!raw || typeof raw !== 'string') {
     return { year: null, month: null, day: null };
   }
 
-  const cleaned = raw.trim();
-  if (!cleaned) {
+  const trimmed = raw.trim();
+  if (!trimmed) {
     return { year: null, month: null, day: null };
   }
 
-  const parts = cleaned.replace(/\//g, '-').split('-').map((p) => p.trim());
-  let year = null;
-  let month = null;
-  let day = null;
+  // ISO: YYYY-MM-DD
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    return {
+      year: Number(y),
+      month: Number(m),
+      day: Number(d)
+    };
+  }
 
-  const toInt = (val) => {
-    const n = parseInt(val, 10);
-    return Number.isNaN(n) ? null : n;
-  };
+  // Slash format: M/D/YYYY or MM/DD/YYYY
+  const slashMatch = trimmed.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{4})$/);
+  if (slashMatch) {
+    const [, m, d, y] = slashMatch;
+    return {
+      year: Number(y),
+      month: Number(m),
+      day: Number(d)
+    };
+  }
 
+  // Month-name formats, e.g. "Mar 6 2008", "March 6 2008", with optional comma.
+  const monthNamesShort = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const monthNamesLong = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+
+  const cleaned = trimmed.replace(',', '');
+  const parts = cleaned.split(/\s+/);
   if (parts.length === 3) {
-    const [a, b, c] = parts;
+    const [mRaw, dRaw, yRaw] = parts;
+    const mLower = mRaw.toLowerCase();
+    let month = null;
+
+    let idx = monthNamesShort.indexOf(mLower);
+    if (idx === -1) {
+      idx = monthNamesLong.indexOf(mLower);
+    }
+    if (idx !== -1) {
+      month = idx + 1;
+    }
+
+    const day = Number(dRaw);
+    const year = Number(yRaw);
+
+    if (month && !Number.isNaN(day) && !Number.isNaN(year)) {
+      return { year, month, day };
+    }
+  }
+
+  // Fallback: numeric with dashes in non-ISO order, e.g. "03-06-2008" or "6-3-2008"
+  const dashParts = trimmed.replace(/\//g, '-').split('-');
+  if (dashParts.length === 3) {
+    const [a, b, c] = dashParts;
     if (a.length === 4) {
       // YYYY-MM-DD
-      year = toInt(a);
-      month = toInt(b);
-      day = toInt(c);
-    } else {
-      // DD-MM-YYYY
-      day = toInt(a);
-      month = toInt(b);
-      year = toInt(c);
+      return {
+        year: Number(a),
+        month: Number(b),
+        day: Number(c)
+      };
     }
-  } else if (parts.length === 2) {
-    const [a, b] = parts;
-    if (a.length === 4) {
-      // YYYY-MM
-      year = toInt(a);
-      month = toInt(b);
-    } else {
-      // MM-DD
-      month = toInt(a);
-      day = toInt(b);
+    if (c.length === 4) {
+      // DD-MM-YYYY or MM-DD-YYYY – assume MM-DD-YYYY
+      return {
+        year: Number(c),
+        month: Number(a),
+        day: Number(b)
+      };
     }
   }
 
-  // Basic sanity check
-  if (month !== null && (month < 1 || month > 12)) {
-    month = null;
-  }
-  if (day !== null && (day < 1 || day > 31)) {
-    day = null;
-  }
-
-  return { year, month, day };
+  return { year: null, month: null, day: null };
 }
 
 function getStarSign(month, day) {
@@ -87,16 +114,16 @@ function getStarSign(month, day) {
 function calculateDaysAlive(year, month, day) {
   if (!year || !month || !day) return null;
   try {
-    const birthUtc = Date.UTC(year, month - 1, day);
+    const birth = Date.UTC(year, month - 1, day);
     const today = new Date();
     const todayUtc = Date.UTC(
       today.getUTCFullYear(),
       today.getUTCMonth(),
       today.getUTCDate()
     );
-    const diffMs = todayUtc - birthUtc;
-    if (diffMs < 0) return null;
-    return Math.floor(diffMs / (24 * 60 * 60 * 1000));
+    const diff = todayUtc - birth;
+    if (diff <= 0) return null;
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
   } catch {
     return null;
   }
@@ -105,8 +132,8 @@ function calculateDaysAlive(year, month, day) {
 function getWeekdayBorn(year, month, day) {
   if (!year || !month || !day) return null;
   try {
-    const date = new Date(Date.UTC(year, month - 1, day));
-    return date.toLocaleDateString(undefined, { weekday: 'long' });
+    const d = new Date(Date.UTC(year, month - 1, day));
+    return d.toLocaleDateString(undefined, { weekday: 'long' });
   } catch {
     return null;
   }
@@ -120,48 +147,39 @@ export default function SpectatorDataPage() {
 
   React.useEffect(() => {
     let active = true;
-    let intervalId;
-
     const fetchData = async () => {
       if (!userId) return;
       try {
         const res = await fetch(`${API_BASE}/data_peek/${encodeURIComponent(userId)}`);
         if (!res.ok) return;
         const json = await res.json();
-        if (active) {
-          setData(json);
-        }
+        if (active) setData(json);
       } catch {
-        // ignore and try again next poll
+        // ignore, will retry on next poll
       }
     };
 
     fetchData();
-    intervalId = window.setInterval(fetchData, 1500);
-
+    const id = window.setInterval(fetchData, 1500);
     return () => {
       active = false;
-      if (intervalId) {
-        window.clearInterval(intervalId);
-      }
+      window.clearInterval(id);
     };
   }, [userId]);
 
   const birthdayRaw = data && data.birthday;
   const parsed = parseBirthday(birthdayRaw || '');
-  const starSign =
-    parsed && parsed.month && parsed.day ? getStarSign(parsed.month, parsed.day) : null;
+  const starSign = parsed.month && parsed.day ? getStarSign(parsed.month, parsed.day) : null;
   const daysAlive =
-    parsed && parsed.year && parsed.month && parsed.day
+    parsed.year && parsed.month && parsed.day
       ? calculateDaysAlive(parsed.year, parsed.month, parsed.day)
       : null;
   const weekday =
-    parsed && parsed.year && parsed.month && parsed.day
+    parsed.year && parsed.month && parsed.day
       ? getWeekdayBorn(parsed.year, parsed.month, parsed.day)
       : null;
 
-  const canShowAnyComputed =
-    Boolean(starSign) || daysAlive !== null || weekday !== null;
+  const canShowAnyComputed = Boolean(starSign || daysAlive !== null || weekday !== null);
 
   const fullNameParts = [];
   if (data && data.first_name) fullNameParts.push(data.first_name);
@@ -177,9 +195,7 @@ export default function SpectatorDataPage() {
         <div style={{ marginTop: '12px' }}>
           <div className="spectator-item">
             <div className="spectator-label">Full Name</div>
-            <div className="spectator-value">
-              {fullName || '—'}
-            </div>
+            <div className="spectator-value">{fullName || '—'}</div>
           </div>
 
           <div className="spectator-item">
@@ -191,9 +207,7 @@ export default function SpectatorDataPage() {
 
           <div className="spectator-item">
             <div className="spectator-label">Birthday</div>
-            <div className="spectator-value">
-              {birthdayRaw || '—'}
-            </div>
+            <div className="spectator-value">{birthdayRaw || '—'}</div>
           </div>
 
           <div className="spectator-dropdown">
@@ -216,17 +230,17 @@ export default function SpectatorDataPage() {
                     )}
                     {daysAlive !== null && (
                       <div className="dropdown-row">
-                        <strong>Days alive:</strong> {daysAlive.toLocaleString()}
+                        <strong>Days alive:</strong> {daysAlive.toLocaleString()}</strong>
                       </div>
                     )}
                     {weekday && (
                       <div className="dropdown-row">
-                        <strong>Day of week born:</strong> {weekday}
+                        <strong>Day of week born:</strong> {weekday}</strong>
                       </div>
                     )}
                   </>
                 ) : (
-                  <div style={{ color: '#777777' }}>
+                  <div style={{ color: '#777' }}>
                     No additional data can be computed from the current birthday format.
                   </div>
                 )}
